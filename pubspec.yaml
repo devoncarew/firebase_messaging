@@ -1,0 +1,11 @@
+name: firebase_messaging
+description: A new flutter plugin project.
+
+flutter:
+  plugin:
+    androidPackage: com.yourcompany.firebase_messaging
+    pluginClass: FirebaseMessagingPlugin
+
+dependencies:
+  flutter:
+    sdk: flutter
