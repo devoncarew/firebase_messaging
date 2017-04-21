@@ -1,4 +1,8 @@
-package com.yourcompany.firebase_messaging;
+// Copyright 2017 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package io.flutter.plugins.firebase_messaging;
 
 import io.flutter.app.FlutterActivity;
 import io.flutter.plugin.common.MethodChannel;

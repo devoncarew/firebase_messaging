@@ -3,7 +3,7 @@ description: Firebase Cloud Messaging plugin for Flutter applications.
 
 flutter:
   plugin:
-    androidPackage: io.flutter.firebase_messaging
+    androidPackage: io.flutter.plugins.firebase_messaging
     pluginClass: FirebaseMessagingPlugin
 
 dependencies:
