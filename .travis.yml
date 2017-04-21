@@ -5,4 +5,5 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - clang-format-5.0
+      - oracle-java8-set-default
 script: ./travis/script.sh

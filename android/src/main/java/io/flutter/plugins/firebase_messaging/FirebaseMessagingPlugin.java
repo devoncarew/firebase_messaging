@@ -5,14 +5,12 @@
 package io.flutter.plugins.firebase_messaging;
 
 import io.flutter.app.FlutterActivity;
+import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.MethodCall;
 
-/**
- * FirebaseMessagingPlugin
- */
+/** FirebaseMessagingPlugin */
 public class FirebaseMessagingPlugin implements MethodCallHandler {
   private FlutterActivity activity;
 
