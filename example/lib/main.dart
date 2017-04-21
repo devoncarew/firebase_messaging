@@ -1,107 +1,173 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+// Copyright 2017 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-void main() {
-  runApp(new MyApp());
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+
+final Map<String, Item> _items = <String, Item>{};
+Item _itemForMessage(Map<String, dynamic> message) {
+  String itemId = message['id'];
+  Item item = _items.putIfAbsent(itemId, () => new Item(itemId: itemId))
+    ..status = message['status'];
+  return item;
 }
 
-class MyApp extends StatelessWidget {
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return new MaterialApp(
-      title: 'Flutter Demo',
-      theme: new ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see
-        // the application has a blue toolbar. Then, without quitting
-        // the app, try changing the primarySwatch below to Colors.green
-        // and then invoke "hot reload" (press "r" in the console where
-        // you ran "flutter run", or press Run > Hot Reload App in IntelliJ).
-        // Notice that the counter didn't reset back to zero -- the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
-      ),
-      home: new MyHomePage(title: 'Flutter Demo Home Page'),
+class Item {
+  Item({this.itemId});
+  final String itemId;
+
+  StreamController<Item> _controller = new StreamController<Item>.broadcast();
+  Stream<Item> get onChanged => _controller.stream;
+
+  String _status;
+  String get status => _status;
+  set status(String value) {
+    _status = value;
+    _controller.add(this);
+  }
+
+  static final Map<String, Route> routes = <String, Route>{};
+  Route get route {
+    String routeName = '/detail/$itemId';
+    return routes.putIfAbsent(
+      routeName,
+      () => new MaterialPageRoute(
+            settings: new RouteSettings(name: routeName),
+            builder: (BuildContext context) => new DetailPage(itemId),
+          ),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key, this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful,
-  // meaning that it has a State object (defined below) that contains
-  // fields that affect how it looks.
-
-  // This class is the configuration for the state. It holds the
-  // values (in this case the title) provided by the parent (in this
-  // case the App widget) and used by the build method of the State.
-  // Fields in a Widget subclass are always marked "final".
-
-  final String title;
-
+class DetailPage extends StatefulWidget {
+  DetailPage(this.itemId);
+  final String itemId;
   @override
-  _MyHomePageState createState() => new _MyHomePageState();
+  _DetailPageState createState() => new _DetailPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  String _platformVersion = 'Unknown';
+class _DetailPageState extends State<DetailPage> {
+  Item _item;
+  StreamSubscription _subscription;
 
   @override
   void initState() {
     super.initState();
-    FirebaseMessaging.platformVersion.then((String platformVersion) {
-      setState(() {
-        _platformVersion = platformVersion;
-      });
+    _item = _items[widget.itemId];
+    _subscription = _item.onChanged.listen((Item item) {
+      if (!mounted) {
+        _subscription.cancel();
+      } else {
+        setState(() {
+          _item = item;
+        });
+      }
     });
   }
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that
-      // something has changed in this State, which causes it to rerun
-      // the build method below so that the display can reflect the
-      // updated values. If we changed _counter without calling
-      // setState(), then the build method would not be called again,
-      // and so nothing would appear to happen.
-      _counter++;
+  Widget build(BuildContext context) {
+    return new Scaffold(
+      appBar: new AppBar(
+        title: new Text("Item ${_item.itemId}"),
+      ),
+      body: new Material(
+        child: new Center(child: new Text("Item status: ${_item.status}")),
+      ),
+    );
+  }
+}
+
+class PushMessagingExample extends StatefulWidget {
+  @override
+  _PushMessagingExampleState createState() => new _PushMessagingExampleState();
+}
+
+class _PushMessagingExampleState extends State<PushMessagingExample> {
+  String _homeScreenText = "Waiting for token...";
+  final FirebaseMessaging _firebaseMessaging = new FirebaseMessaging();
+
+  Future<Null> _showItemDialog(Map<String, dynamic> message) async {
+    Item item = _itemForMessage(message);
+    showDialog(
+        context: context,
+        child: new AlertDialog(
+          content: new Text("Item ${item.itemId} has been updated"),
+          actions: <Widget>[
+            new FlatButton(
+                child: new Text('CLOSE'),
+                onPressed: () {
+                  Navigator.pop(context, false);
+                }),
+            new FlatButton(
+                child: new Text('SHOW'),
+                onPressed: () {
+                  Navigator.pop(context, true);
+                }),
+          ],
+        )).then((bool shouldNavigate) {
+      if (shouldNavigate == true) _navigateToItemDetail(message);
+    });
+  }
+
+  Future<Null> _navigateToItemDetail(Map<String, dynamic> message) async {
+    Item item = _itemForMessage(message);
+    // Clear away dialogs
+    Navigator.popUntil(context, (Route<dynamic> route) => route is PageRoute);
+    if (!item.route.isCurrent) Navigator.push(context, item.route);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _firebaseMessaging.configure(
+      onMessage: _showItemDialog,
+      onLaunch: _navigateToItemDetail,
+      onResume: _navigateToItemDetail,
+    );
+    _firebaseMessaging.requestNotificationPermissions(
+        const IosNotificationSettings(sound: true, badge: true, alert: true));
+    _firebaseMessaging.onIosSettingsRegistered
+        .listen((IosNotificationSettings settings) {
+      print("Settings registered: $settings");
+    });
+    _firebaseMessaging.getToken().then((String token) {
+      assert(token != null);
+      setState(() {
+        _homeScreenText = "Push Messaging token: $token";
+      });
+      print(_homeScreenText);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance
-    // as done by the _incrementCounter method above.
-    // The Flutter framework has been optimized to make rerunning
-    // build methods fast, so that you can just rebuild anything that
-    // needs updating rather than having to individually change
-    // instances of widgets.
     return new Scaffold(
-      appBar: new AppBar(
-        // Here we take the value from the MyHomePage object that
-        // was created by the App.build method, and use it to set
-        // our appbar title.
-        title: new Text(widget.title),
-      ),
-      body: new Center(
-        child: new Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            new Text('Running on: $_platformVersion\n'),
-            new Text(
-                'Button tapped $_counter time${ _counter == 1 ? '' : 's' }.'),
-          ],
+        appBar: new AppBar(
+          title: new Text('Push Messaging Demo'),
         ),
-      ),
-      floatingActionButton: new FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: new Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
+        // For testing -- simulate a message being received
+        floatingActionButton: new FloatingActionButton(
+          onPressed: () => _showItemDialog(<String, dynamic>{
+                "id": "2",
+                "status": "out of stock",
+              }),
+          tooltip: 'Simulate Message',
+          child: new Icon(Icons.message),
+        ),
+        body: new Material(
+            child: new Center(
+          child: new Text(_homeScreenText),
+        )));
   }
+}
+
+void main() {
+  runApp(
+    new MaterialApp(
+      home: new PushMessagingExample(),
+    ),
+  );
 }

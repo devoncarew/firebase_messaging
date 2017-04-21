@@ -1,25 +1,141 @@
+// Copyright 2017 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #import "FirebaseMessagingPlugin.h"
 
+#import "Firebase/Firebase.h"
+
 @implementation FirebaseMessagingPlugin {
+  FlutterMethodChannel *_channel;
+  NSDictionary *_launchNotification;
+  BOOL _resumingFromBackground;
 }
 
 - (instancetype)initWithController:(FlutterViewController *)controller {
   self = [super init];
   if (self) {
-    FlutterMethodChannel *channel = [FlutterMethodChannel
-        methodChannelWithName:@"firebase_messaging"
-              binaryMessenger:controller];
-    [channel setMethodCallHandler:^(FlutterMethodCall *call,
-                                    FlutterResult result) {
-      if ([@"getPlatformVersion" isEqualToString:call.method]) {
-        result([@"iOS " stringByAppendingString:[[UIDevice currentDevice]
-                                                    systemVersion]]);
-      } else {
-        result(FlutterMethodNotImplemented);
-      }
+    _resumingFromBackground = NO;
+    if (![FIRApp defaultApp]) {
+      [FIRApp configure];
+    }
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(tokenRefreshNotification:)
+                                                 name:kFIRInstanceIDTokenRefreshNotification
+                                               object:nil];
+    _channel = [FlutterMethodChannel methodChannelWithName:@"firebase_messaging"
+                                           binaryMessenger:controller];
+    __unsafe_unretained typeof(self) weakSelf = self;
+    [_channel setMethodCallHandler:^(FlutterMethodCall *call, FlutterResult result) {
+      [weakSelf handleMethodCall:call.method arguments:call.arguments result:result];
     }];
   }
   return self;
+}
+
+- (void)handleMethodCall:(NSString *)method
+               arguments:(NSDictionary *)arguments
+                  result:(FlutterResult)result {
+  if ([@"requestNotificationPermissions" isEqualToString:method]) {
+    UIUserNotificationType notificationTypes = 0;
+    if (arguments[@"sound"]) {
+      notificationTypes |= UIUserNotificationTypeSound;
+    }
+    if (arguments[@"alert"]) {
+      notificationTypes |= UIUserNotificationTypeAlert;
+    }
+    if (arguments[@"badge"]) {
+      notificationTypes |= UIUserNotificationTypeBadge;
+    }
+    UIUserNotificationSettings *settings =
+        [UIUserNotificationSettings settingsForTypes:notificationTypes categories:nil];
+    [[UIApplication sharedApplication] registerUserNotificationSettings:settings];
+
+    result(nil);
+  } else if ([@"configure" isEqualToString:method]) {
+    [[UIApplication sharedApplication] registerForRemoteNotifications];
+    if (_launchNotification != nil) {
+      [_channel invokeMethod:@"onLaunch" arguments:_launchNotification];
+    }
+    result(nil);
+  } else {
+    result(FlutterMethodNotImplemented);
+  }
+}
+
+- (void)didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken {
+  [_channel invokeMethod:@"onToken" arguments:[[FIRInstanceID instanceID] token]];
+}
+
+- (void)tokenRefreshNotification:(NSNotification *)notification {
+  NSString *refreshedToken = [[FIRInstanceID instanceID] token];
+
+  // Connect to FCM since connection may have failed when attempted before having a token.
+  [self connectToFcm];
+
+  [_channel invokeMethod:@"onToken" arguments:refreshedToken];
+}
+
+- (void)didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings {
+  NSDictionary *settingsDictionary = @{
+    @"sound" : [NSNumber numberWithBool:notificationSettings.types & UIUserNotificationTypeSound],
+    @"badge" : [NSNumber numberWithBool:notificationSettings.types & UIUserNotificationTypeBadge],
+    @"alert" : [NSNumber numberWithBool:notificationSettings.types & UIUserNotificationTypeAlert],
+  };
+  [_channel invokeMethod:@"onIosSettingsRegistered" arguments:settingsDictionary];
+}
+
+- (void)didReceiveRemoteNotification:(NSDictionary *)userInfo {
+  if (_resumingFromBackground) {
+    [_channel invokeMethod:@"onResume" arguments:userInfo];
+  } else {
+    [_channel invokeMethod:@"onMessage" arguments:userInfo];
+  }
+}
+
+- (void)connectToFcm {
+  // Won't connect since there is no token
+  if (![[FIRInstanceID instanceID] token]) {
+    return;
+  }
+
+  // Disconnect previous FCM connection if it exists.
+  [[FIRMessaging messaging] disconnect];
+
+  [[FIRMessaging messaging] connectWithCompletion:^(NSError *_Nullable error) {
+    if (error != nil) {
+      NSLog(@"Unable to connect to FCM. %@", error);
+    }
+  }];
+}
+
+- (void)didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+  if (launchOptions != nil) {
+    _launchNotification = launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
+  }
+}
+
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+  _resumingFromBackground = NO;
+  [self connectToFcm];
+  // Clears push notifications from the notification center, with the
+  // side effect of resetting the badge count. We need to clear notifications
+  // because otherwise the user could tap notifications in the notification
+  // center while the app is in the foreground, and we wouldn't be able to
+  // distinguish that case from the case where a message came in and the
+  // user dismissed the notification center without tapping anything.
+  // TODO(goderbauer): Revisit this behavior once we provide an API for managing
+  // the badge number, or if we add support for running Dart in the background.
+  // Setting badgeNumber to 0 is a no-op (= notifications will not be cleared) if it is already 0,
+  // therefore the next line is setting it to 1 first before clearing it again to remove all
+  // notifications.
+  application.applicationIconBadgeNumber = 1;
+  application.applicationIconBadgeNumber = 0;
+}
+
+- (void)applicationDidEnterBackground {
+  [[FIRMessaging messaging] disconnect];
+  _resumingFromBackground = YES;
 }
 
 @end

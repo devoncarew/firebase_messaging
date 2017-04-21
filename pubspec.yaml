@@ -1,11 +1,17 @@
 name: firebase_messaging
-description: A new flutter plugin project.
+description: Firebase Cloud Messaging plugin for Flutter applications.
 
 flutter:
   plugin:
-    androidPackage: com.yourcompany.firebase_messaging
+    androidPackage: io.flutter.firebase_messaging
     pluginClass: FirebaseMessagingPlugin
 
 dependencies:
+  meta: ^1.0.4
+  platform: ^2.0.0
   flutter:
     sdk: flutter
+
+dev_dependencies:
+  mockito: ^2.0.2
+  test: ^0.12.20

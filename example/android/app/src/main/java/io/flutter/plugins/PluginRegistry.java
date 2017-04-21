@@ -2,7 +2,7 @@ package io.flutter.plugins;
 
 import io.flutter.app.FlutterActivity;
 
-import com.yourcompany.firebase_messaging.FirebaseMessagingPlugin;
+import io.flutter.firebase_messaging.FirebaseMessagingPlugin;
 
 /**
  * Generated file. Do not edit.
